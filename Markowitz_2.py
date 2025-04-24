@@ -69,7 +69,61 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
+        # Iterate over each date to calculate weights
+        for date in self.price.index[self.lookback:]:
+            # Get returns for the lookback period
+            window_returns = self.returns[assets].loc[:date].tail(self.lookback)
+            if len(window_returns) < self.lookback:
+                continue
 
+            # Calculate expected returns (mean daily returns annualized)
+            mu = window_returns.mean() * 252
+
+            # Momentum filter: select assets with positive expected returns
+            selected_assets = mu[mu > 0].index
+            if len(selected_assets) == 0:
+                # If no assets have positive momentum, assign equal weights
+                weights = pd.Series(1 / len(assets), index=assets)
+                self.portfolio_weights.loc[date, assets] = weights
+                continue
+
+            # Calculate covariance matrix (annualized)
+            cov_matrix = window_returns.cov() * 252
+
+            # Set up Gurobi model
+            model = gp.Model("portfolio")
+            model.setParam("OutputFlag", 0)  # Suppress output
+
+            # Variables: weights for selected assets
+            w = model.addVars(selected_assets, lb=0, ub=1, name="weight")
+
+            # Objective: Maximize expected return - (gamma/2) * risk
+            expected_return = gp.quicksum(w[a] * mu[a] for a in selected_assets)
+            risk = gp.quicksum(
+                w[a] * w[b] * cov_matrix.loc[a, b]
+                for a in selected_assets
+                for b in selected_assets
+            )
+            model.setObjective(
+                expected_return - (self.gamma / 2) * risk, gp.GRB.MAXIMIZE
+            )
+
+            # Constraint: weights sum to 1
+            model.addConstr(gp.quicksum(w[a] for a in selected_assets) == 1, "sum_weights")
+
+            # Optimize
+            model.optimize()
+
+            # Extract weights
+            weights = pd.Series(0, index=assets)
+            if model.status == gp.GRB.OPTIMAL:
+                for a in selected_assets:
+                    weights[a] = w[a].X
+            else:
+                # Fallback to equal weights if optimization fails
+                weights[selected_assets] = 1 / len(selected_assets)
+
+            self.portfolio_weights.loc[date, assets] = weights
         """
         TODO: Complete Task 4 Above
         """

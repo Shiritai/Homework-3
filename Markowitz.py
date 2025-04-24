@@ -61,7 +61,13 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        # Assign equal weights to all assets except the excluded one (SPY)
+        num_assets = len(assets)
+        equal_weight = 1.0 / num_assets
+        for asset in assets:
+            self.portfolio_weights[asset] = equal_weight
+        # Set weight of excluded asset (SPY) to 0
+        self.portfolio_weights[self.exclude] = 0.0
         """
         TODO: Complete Task 1 Above
         """
@@ -112,7 +118,19 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
-
+        for i in range(len(df)):
+            if i > self.lookback:
+                R_n = df_returns[assets].iloc[i - self.lookback:i]
+                volatilities = R_n.std()
+                inv_vol = 1 / volatilities.replace(0, np.nan)  # Avoid division by zero
+                weights = inv_vol / inv_vol.sum()
+                for asset in assets:
+                    self.portfolio_weights.loc[df.index[i], asset] = weights[asset]
+            else:
+                for asset in assets:
+                    self.portfolio_weights.loc[df.index[i], asset] = 0.0
+        # Set weight of excluded asset (SPY) to 0
+        self.portfolio_weights[self.exclude] = 0.0
         """
         TODO: Complete Task 2 Above
         """
@@ -188,7 +206,13 @@ class MeanVariancePortfolio:
                 # Sample Code: Initialize Decision w and the Objective
                 # NOTE: You can modify the following code
                 w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                
+                portfolio_return = mu @ w
+                portfolio_variance = w @ Sigma @ w
+                model.setObjective(portfolio_return - 0.5 * gamma * portfolio_variance, gp.GRB.MAXIMIZE)
+                # Constraint: Sum of weights = 1
+                model.addConstr(w.sum() == 1, name="budget")
 
                 """
                 TODO: Complete Task 3 Above
@@ -401,7 +425,12 @@ class AssignmentJudge:
             return 20
         else:
             print("Problem 2 Fail")
-        return 0
+            diff = (answer_dataframe - rp_dataframe).abs()
+            print("Max difference per column:")
+            print(diff.max())
+            print("Rows with large differences (>0.01):")
+            print(diff[diff > 0.01].dropna(how='all'))
+            return 0
 
     def check_answer_mv_list(self, mv_list):
         mv_list_0 = pd.read_pickle(self.mv_list_0_path)
